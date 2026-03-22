@@ -1,0 +1,82 @@
+{
+  "absences": [
+    {
+      "userId": "613819781807603754",
+      "userTag": "veralynia",
+      "start": "18.03.2026",
+      "end": "19.03.2026",
+      "reason": "Privat",
+      "createdAt": "2026-03-18T09:11:55.858Z"
+    }
+  ],
+  "sanctions": [
+    {
+      "id": 1,
+      "userId": "613819781807603754",
+      "userTag": "veralynia",
+      "grund": "Fehlende Wochenabgabe",
+      "betrag": 100000,
+      "frist": "20.03",
+      "status": "bezahlt",
+      "createdAt": "2026-03-18T10:23:36.369Z",
+      "paidAt": "2026-03-18T10:42:50.210Z"
+    },
+    {
+      "id": 2,
+      "userId": "613819781807603754",
+      "userTag": "veralynia",
+      "grund": "xy",
+      "betrag": 100000,
+      "frist": "12.12",
+      "status": "offen",
+      "createdAt": "2026-03-18T10:41:59.959Z"
+    }
+  ],
+  "meetings": [
+    {
+      "id": 1,
+      "titel": "test",
+      "datum": "18.03.2026",
+      "info": "wichtig",
+      "createdAt": "2026-03-18T11:41:13.670Z",
+      "votes": [
+        {
+          "userId": "613819781807603754",
+          "userTag": "veralynia",
+          "vote": "zusage",
+          "updatedAt": "2026-03-18T11:41:20.627Z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "titel": "test3",
+      "datum": "26.03.2026",
+      "info": "Keine Zusatzinfos.",
+      "createdAt": "2026-03-18T11:50:45.410Z",
+      "votes": [
+        {
+          "userId": "613819781807603754",
+          "userTag": "veralynia",
+          "vote": "zusage",
+          "updatedAt": "2026-03-18T11:50:47.476Z"
+        }
+      ]
+    }
+  ],
+  "cash": [],
+  "logs": [],
+  "sanktionen": [
+    {
+      "id": 1773830519679,
+      "user": "613819781807603754",
+      "name": "veralynia",
+      "grund": "xy",
+      "betrag": 100000,
+      "status": "offen"
+    }
+  ],
+  "settings": {
+    "factionTag": "VST"
+  }
+}
