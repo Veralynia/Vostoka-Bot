@@ -1,4 +1,4 @@
-const {
+  const {
   Client,
   GatewayIntentBits,
   Partials,
@@ -19,7 +19,6 @@ const {
 
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
