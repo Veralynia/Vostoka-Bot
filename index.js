@@ -1,78 +1,28 @@
+const { Client, GatewayIntentBits, Events } = require('discord.js');
 
-      if (customId === 'log_latest') {
-        const recent = db.logs.slice(0, 5);
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+});
 
-        if (!recent.length) {
-          await interaction.reply({
-            content: 'Noch keine Logbucheinträge vorhanden.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
+const token = process.env.DISCORD_TOKEN;
 
-        const text = recent
-          .map(l => '- **' + l.typ + '** | ' + l.text + ' | von ' + l.by)
-          .join('\n');
+console.log("DISCORD_TOKEN vorhanden:", !!token);
 
-        const embed = new EmbedBuilder()
-          .setTitle('📝 Letzte Logs')
-          .setDescription(text)
-          .setColor(0x4a4a4a);
+if (!token) {
+  console.log("Kein DISCORD_TOKEN gefunden!");
+  process.exit(1);
+}
 
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-    }
+client.once(Events.ClientReady, readyClient => {
+  console.log(`Eingeloggt als ${readyClient.user.tag}`);
+});
 
-    if (interaction.isModalSubmit()) {
-      const db = readDb();
+client.on(Events.InteractionCreate, async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-      if (interaction.customId === 'absence_modal') {
-        const start = interaction.fields.getTextInputValue('start');
-        const end = interaction.fields.getTextInputValue('end');
-        const reason = interaction.fields.getTextInputValue('reason');
-
-        db.absences.push({
-          id: nextId(db.absences),
-          userId: interaction.user.id,
-          userTag: interaction.user.tag,
-          start,
-          end,
-          reason,
-          createdAt: new Date().toISOString(),
-        });
-
-        writeDb(db);
-
-        await interaction.reply({
-          content: 'Abwesenheit eingetragen: **' + start + '** bis **' + end + '**',
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-    }
-  } catch (error) {
-    console.error('Fehler bei Interaction:', error);
-
-    if (interaction.isRepliable()) {
-      try {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({
-            content: 'Es gab einen Fehler bei der Verarbeitung.',
-            flags: MessageFlags.Ephemeral,
-          });
-        } else {
-          await interaction.reply({
-            content: 'Es gab einen Fehler bei der Verarbeitung.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-      } catch (_) {}
-    }
+  if (interaction.commandName === 'ping') {
+    await interaction.reply({ content: 'Pong!' });
   }
 });
 
-client.login(TOKEN);
+client.login(token);
