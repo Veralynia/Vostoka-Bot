@@ -19,9 +19,9 @@ const client = new Client({
   partials: [Partials.GuildMember]
 });
 
-const TOKEN = "DEIN_TOKEN";
-const CLIENT_ID = "DEINE_CLIENT_ID";
-const GUILD_ID = "DEINE_SERVER_ID";
+const TOKEN = "MTQ4Mzc0NzEyODcwMTYyMDMyNQ.G3SoGQ.Jm9BzrTpogyf3ot49IzZNONYLcV-K31R2leszs";
+const CLIENT_ID = "1483747128701620325";
+const GUILD_ID = "1416200773641044202";
 
 // 👉 Rollen die nutzen dürfen
 const ALLOWED_ROLES = ["Leaderschaft", "Glaz"];
