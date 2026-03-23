@@ -22,7 +22,9 @@ const path = require('path');
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
-const LEADER_ROLE_NAME = process.env.LEADER_ROLE_NAME || 'Leaderschaft';
+
+const ALLOWED_SANCTION_ROLE_NAMES = ['Leaderschaft', 'Glaz'];
+const ALLOWED_MANAGEMENT_ROLE_NAMES = ['Leaderschaft'];
 
 if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
   console.error('Fehlende Umgebungsvariablen: DISCORD_TOKEN, CLIENT_ID oder GUILD_ID.');
@@ -82,19 +84,19 @@ function fmtMoney(value) {
   return '$' + Number(value || 0).toLocaleString('en-US');
 }
 
-function isLeader(member) {
+function hasAnyRole(member, allowedRoleNames) {
   if (!member?.roles?.cache) return false;
-  return member.roles.cache.some(role => role.name === LEADER_ROLE_NAME);
+  return member.roles.cache.some(role => allowedRoleNames.includes(role.name));
 }
 
 function buildPanelEmbed() {
   return new EmbedBuilder()
     .setTitle('🕴️ VOSTOKA Verwaltung')
-    .setDescription('Disziplin ist Pflicht. Nutze die Buttons unten für Abwesenheiten, Meetings, Kasse und Logbuch.')
+    .setDescription('Disziplin ist Pflicht. Nutze die Buttons unten für Abwesenheiten, Meetings und Sanktionen.')
     .setColor(0x5c0e0e)
     .addFields(
       { name: 'Mitglieder', value: 'Abwesenheit eintragen, eigene Sanktionen ansehen', inline: false },
-      { name: 'Leitung', value: 'Meetings, Sanktionen, Kasse und Logbuch verwalten', inline: false }
+      { name: 'Leitung', value: 'Meetings und Sanktionen verwalten', inline: false }
     )
     .setFooter({ text: 'Vostoka vergisst nichts.' });
 }
@@ -123,15 +125,7 @@ function buildMainButtons() {
       new ButtonBuilder()
         .setCustomId('meeting_list')
         .setLabel('Meetings')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('cash_status')
-        .setLabel('Kassenstand')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('log_latest')
-        .setLabel('Letzte Logs')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Success)
     ),
   ];
 }
@@ -225,9 +219,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'sanktion_add') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_SANCTION_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft oder Glaz.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -259,9 +253,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'sanktion_bezahlt') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_SANCTION_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft oder Glaz.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -289,9 +283,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'meeting_erstellen') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_MANAGEMENT_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -342,9 +336,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'meeting_sanktionieren') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_MANAGEMENT_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -432,9 +426,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'kasse_einnahme') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_MANAGEMENT_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -461,9 +455,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'kasse_ausgabe') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_MANAGEMENT_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -490,9 +484,9 @@ client.on(Events.InteractionCreate, async interaction => {
       }
 
       if (interaction.commandName === 'log_add') {
-        if (!isLeader(interaction.member)) {
+        if (!hasAnyRole(interaction.member, ALLOWED_MANAGEMENT_ROLE_NAMES)) {
           await interaction.reply({
-            content: 'Dafür brauchst du die Leitungsrolle.',
+            content: 'Dafür brauchst du die Rolle Leaderschaft.',
             flags: MessageFlags.Ephemeral,
           });
           return;
@@ -645,7 +639,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       if (customId.startsWith('meeting_yes_') || customId.startsWith('meeting_no_')) {
         const parts = customId.split('_');
-        const voteTypeRaw = parts[1];
+        const voteTypeRaw = parts[2] === undefined ? parts[1] : parts[1];
         const meetingId = Number(parts[2]);
 
         const meeting = db.meetings.find(m => m.id === meetingId);
@@ -733,56 +727,6 @@ client.on(Events.InteractionCreate, async interaction => {
 
         await interaction.editReply({
           embeds: [embed],
-        });
-        return;
-      }
-
-      if (customId === 'cash_status') {
-        const stand = db.cash.reduce((sum, item) => {
-          return sum + (item.type === 'einnahme' ? item.betrag : -item.betrag);
-        }, 0);
-
-        const recent = db.cash
-          .slice(-5)
-          .reverse()
-          .map(c => '- ' + (c.type === 'einnahme' ? '+' : '-') + ' ' + fmtMoney(c.betrag) + ' | ' + c.grund)
-          .join('\n') || 'Keine Einträge.';
-
-        const embed = new EmbedBuilder()
-          .setTitle('🏦 Kasse')
-          .setDescription('**Stand:** ' + fmtMoney(stand) + '\n\n**Letzte Buchungen**\n' + recent)
-          .setColor(0x8a6a15);
-
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
-        });
-        return;
-      }
-
-      if (customId === 'log_latest') {
-        const recent = db.logs.slice(0, 5);
-
-        if (!recent.length) {
-          await interaction.reply({
-            content: 'Noch keine Logbucheinträge vorhanden.',
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        const text = recent
-          .map(l => '- **' + l.typ + '** | ' + l.text + ' | von ' + l.by)
-          .join('\n');
-
-        const embed = new EmbedBuilder()
-          .setTitle('📝 Letzte Logs')
-          .setDescription(text)
-          .setColor(0x4a4a4a);
-
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
         });
         return;
       }
