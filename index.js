@@ -72,19 +72,19 @@ function loadState() {
 }
 
 function hasLeadershipRole(member) {
-  return member.roles?.cache?.some((role) => LEADERSHIP_ROLES.includes(role.name));
+  return member.roles.cache.some((role) => LEADERSHIP_ROLES.includes(role.name));
 }
 
 function hasViewRole(member) {
-  return member.roles?.cache?.some((role) => VIEW_ROLES.includes(role.name));
+  return member.roles.cache.some((role) => VIEW_ROLES.includes(role.name));
 }
 
 function getDisplayName(member) {
   return (
-    member?.displayName ||
-    member?.nickname ||
-    member?.user?.globalName ||
-    member?.user?.username ||
+    member.displayName ||
+    member.nickname ||
+    member.user?.globalName ||
+    member.user?.username ||
     "Unbekannt"
   );
 }
@@ -102,13 +102,6 @@ function getMeetingVotedNames(meeting) {
   return new Set([...(meeting?.yes || []), ...(meeting?.no || [])]);
 }
 
-async function getAllHumanDisplayNames(guild) {
-  const members = await guild.members.fetch();
-  return members
-    .filter((m) => !m.user.bot)
-    .map((m) => getDisplayName(m));
-}
-
 function addSanction({ meetingId, userId, displayName, reason }) {
   const exists = state.sanctions.some(
     (s) => s.meetingId === meetingId && s.userId === userId && s.reason === reason
@@ -117,7 +110,7 @@ function addSanction({ meetingId, userId, displayName, reason }) {
   if (exists) return false;
 
   state.sanctions.push({
-    id: `${meetingId}_${userId}_${Date.now()}`,
+    id: `${meetingId}_${userId}`,
     meetingId,
     userId,
     displayName,
@@ -136,15 +129,15 @@ async function applyAutoSanctionsForCurrentMeeting(guild) {
   const absentIds = new Set(Object.keys(state.absences));
   const votedNames = getMeetingVotedNames(meeting);
 
-  const sanctionableMembers = members
-    .filter((m) => !m.user.bot)
-    .filter((m) => !absentIds.has(m.id))
-    .filter((m) => !votedNames.has(getDisplayName(m)));
-
   const newlySanctioned = [];
 
-  for (const member of sanctionableMembers.values()) {
+  for (const member of members.values()) {
+    if (member.user.bot) continue;
+    if (absentIds.has(member.id)) continue;
+
     const displayName = getDisplayName(member);
+    if (votedNames.has(displayName)) continue;
+
     const created = addSanction({
       meetingId: meeting.id,
       userId: member.id,
@@ -301,45 +294,47 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (!interaction.isChatInputCommand()) return;
 
-    if (interaction.commandName === "panel") {
-      await interaction.deferReply({ ephemeral: true });
+    if (interaction.commandName !== "panel") return;
 
-      const member = await interaction.guild.members.fetch(interaction.user.id);
+    await interaction.deferReply({ ephemeral: true });
 
-      const embed = new EmbedBuilder()
-        .setTitle("📌 Meeting-Panel")
-        .setDescription(
-          [
-            `**Dein Name:** ${getDisplayName(member)}`,
-            `**Leaderschaft:** ${hasLeadershipRole(member) ? "Ja" : "Nein"}`,
-            `**Panel-Zugriff:** ${hasViewRole(member) ? "Ja" : "Nein"}`,
-            "",
-            "Glaz kann keine Meetings erstellen.",
-            "Automatische Sanktionen passieren beim Schließen des aktuellen Meetings.",
-          ].join("\n")
-        )
-        .setColor(0x8e44ad);
+    const member = await interaction.guild.members.fetch(interaction.user.id);
 
-      await interaction.editReply({
-        embeds: [embed],
-        components: buildPanelRows(member),
-      });
-    }
+    const embed = new EmbedBuilder()
+      .setTitle("📌 Meeting-Panel")
+      .setDescription(
+        [
+          `**Dein Name:** ${getDisplayName(member)}`,
+          `**Leaderschaft:** ${hasLeadershipRole(member) ? "Ja" : "Nein"}`,
+          `**Panel-Zugriff:** ${hasViewRole(member) ? "Ja" : "Nein"}`,
+          "",
+          "Glaz kann keine Meetings erstellen oder schließen.",
+          "Sanktionen werden automatisch beim Schließen des aktuellen Meetings erstellt.",
+        ].join("\n")
+      )
+      .setColor(0x8e44ad);
+
+    await interaction.editReply({
+      embeds: [embed],
+      components: buildPanelRows(member),
+    });
   } catch (error) {
     console.error("❌ Fehler bei /panel:", error);
 
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({
-        content: "❌ Beim Öffnen des Panels ist ein Fehler aufgetreten.",
-        embeds: [],
-        components: [],
-      }).catch(() => {});
-    } else {
-      await interaction.reply({
-        content: "❌ Beim Öffnen des Panels ist ein Fehler aufgetreten.",
-        ephemeral: true,
-      }).catch(() => {});
-    }
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: "❌ Beim Öffnen des Panels ist ein Fehler aufgetreten.",
+          embeds: [],
+          components: [],
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ Beim Öffnen des Panels ist ein Fehler aufgetreten.",
+          ephemeral: true,
+        });
+      }
+    } catch (_) {}
   }
 });
 
@@ -363,7 +358,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const currentMeeting = getCurrentMeeting();
       if (currentMeeting && !currentMeeting.closed) {
         return await interaction.reply({
-          content: "❌ Es gibt bereits ein offenes aktuelles Meeting. Schließe es zuerst.",
+          content: "❌ Es gibt bereits ein offenes Meeting. Schließe es zuerst.",
           ephemeral: true,
         });
       }
@@ -382,11 +377,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       saveState();
 
-      const meeting = getCurrentMeeting();
-
       return await interaction.reply({
-        embeds: [buildMeetingEmbed(meeting)],
-        components: [buildVoteRow(meeting.id, false)],
+        embeds: [buildMeetingEmbed(state.meetings[meetingId])],
+        components: [buildVoteRow(meetingId, false)],
       });
     }
 
@@ -414,26 +407,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const newlySanctioned = await applyAutoSanctionsForCurrentMeeting(interaction.guild);
-      const closedMeeting = getCurrentMeeting();
-
-      const embed = new EmbedBuilder()
-        .setTitle("🔒 Meeting geschlossen")
-        .setDescription("Das aktuelle Meeting wurde geschlossen und Sanktionen wurden automatisch erstellt.")
-        .addFields(
-          {
-            name: "🚨 Neu sanktioniert",
-            value: newlySanctioned.length ? newlySanctioned.join("\n") : "Niemand",
-          },
-          {
-            name: "Meeting-ID",
-            value: closedMeeting.id,
-          }
-        )
-        .setColor(0xe74c3c)
-        .setTimestamp();
 
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🔒 Meeting geschlossen")
+            .setDescription("Das aktuelle Meeting wurde geschlossen.")
+            .addFields({
+              name: "🚨 Neu sanktioniert",
+              value: newlySanctioned.length ? newlySanctioned.join("\n") : "Niemand",
+            })
+            .setColor(0xe74c3c)
+            .setTimestamp(),
+        ],
         ephemeral: true,
       });
     }
@@ -463,8 +449,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      meeting.yes = (meeting.yes || []).filter((n) => n !== displayName);
-      meeting.no = (meeting.no || []).filter((n) => n !== displayName);
+      meeting.yes = meeting.yes.filter((n) => n !== displayName);
+      meeting.no = meeting.no.filter((n) => n !== displayName);
 
       if (voteType === "yes") {
         meeting.yes.push(displayName);
@@ -494,7 +480,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const meeting = getCurrentMeeting();
-
       if (!meeting) {
         return await interaction.reply({
           content: "❌ Es gibt aktuell kein Meeting.",
@@ -502,44 +487,48 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const allHumans = await getAllHumanDisplayNames(interaction.guild);
+      const members = await interaction.guild.members.fetch();
       const absentNames = getAbsentDisplayNames();
       const votedNames = getMeetingVotedNames(meeting);
+
+      const allHumans = [];
+      for (const m of members.values()) {
+        if (!m.user.bot) allHumans.push(getDisplayName(m));
+      }
 
       const notVoted = allHumans.filter((name) => !votedNames.has(name));
       const sanctionable = notVoted.filter((name) => !absentNames.has(name));
 
-      const embed = new EmbedBuilder()
-        .setTitle("📊 Aktuellstes Meeting")
-        .setDescription("Es wird immer nur das aktuelle Meeting angezeigt.")
-        .addFields(
-          {
-            name: "✅ Zugesagt",
-            value: meeting.yes.length ? meeting.yes.join("\n") : "Niemand",
-          },
-          {
-            name: "❌ Abgesagt",
-            value: meeting.no.length ? meeting.no.join("\n") : "Niemand",
-          },
-          {
-            name: "⚠️ Nicht abgestimmt",
-            value: notVoted.length ? notVoted.join("\n") : "Alle haben abgestimmt",
-          },
-          {
-            name: "🟡 Abwesend",
-            value: absentNames.size ? [...absentNames].join("\n") : "Niemand",
-          },
-          {
-            name: "🚨 Wird bei Schließen sanktioniert",
-            value: sanctionable.length ? sanctionable.join("\n") : "Niemand",
-          }
-        )
-        .setFooter({ text: `Meeting-ID: ${meeting.id}` })
-        .setColor(0xf1c40f)
-        .setTimestamp(new Date(meeting.createdAt));
-
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📊 Aktuellstes Meeting")
+            .setDescription("Es wird immer nur das aktuelle Meeting angezeigt.")
+            .addFields(
+              {
+                name: "✅ Zugesagt",
+                value: meeting.yes.length ? meeting.yes.join("\n") : "Niemand",
+              },
+              {
+                name: "❌ Abgesagt",
+                value: meeting.no.length ? meeting.no.join("\n") : "Niemand",
+              },
+              {
+                name: "⚠️ Nicht abgestimmt",
+                value: notVoted.length ? notVoted.join("\n") : "Alle haben abgestimmt",
+              },
+              {
+                name: "🟡 Abwesend",
+                value: absentNames.size ? [...absentNames].join("\n") : "Niemand",
+              },
+              {
+                name: "🚨 Wird sanktioniert",
+                value: sanctionable.length ? sanctionable.join("\n") : "Niemand",
+              }
+            )
+            .setColor(0xf1c40f)
+            .setTimestamp(new Date(meeting.createdAt)),
+        ],
         ephemeral: true,
       });
     }
@@ -552,25 +541,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      const currentMeetingId = state.currentMeetingId;
-      const sanctionsForCurrentMeeting = state.sanctions.filter(
-        (s) => s.meetingId === currentMeetingId
-      );
-
-      const embed = new EmbedBuilder()
-        .setTitle("⚠️ Sanktionen")
-        .setDescription("Angezeigt werden nur Sanktionen des aktuellsten Meetings.")
-        .addFields({
-          name: "🚨 Sanktioniert",
-          value: sanctionsForCurrentMeeting.length
-            ? sanctionsForCurrentMeeting.map((s) => s.displayName).join("\n")
-            : "Niemand",
-        })
-        .setColor(0xe67e22)
-        .setTimestamp();
+      const sanctionsForCurrentMeeting = state.currentMeetingId
+        ? state.sanctions.filter((s) => s.meetingId === state.currentMeetingId)
+        : [];
 
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("⚠️ Sanktionen")
+            .setDescription("Angezeigt werden nur Sanktionen des aktuellen Meetings.")
+            .addFields({
+              name: "🚨 Sanktioniert",
+              value: sanctionsForCurrentMeeting.length
+                ? sanctionsForCurrentMeeting.map((s) => s.displayName).join("\n")
+                : "Niemand",
+            })
+            .setColor(0xe67e22)
+            .setTimestamp(),
+        ],
         ephemeral: true,
       });
     }
@@ -584,14 +572,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       saveState();
 
-      const embed = new EmbedBuilder()
-        .setTitle("🟡 Abwesenheit gemeldet")
-        .setDescription(`**${displayName}** wurde als abwesend markiert.`)
-        .setColor(0xf1c40f)
-        .setTimestamp();
-
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🟡 Abwesenheit gemeldet")
+            .setDescription(`**${displayName}** wurde als abwesend markiert.`)
+            .setColor(0xf1c40f)
+            .setTimestamp(),
+        ],
         ephemeral: true,
       });
     }
@@ -607,14 +595,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       delete state.absences[member.id];
       saveState();
 
-      const embed = new EmbedBuilder()
-        .setTitle("🟢 Abwesenheit entfernt")
-        .setDescription(`**${displayName}** ist nicht mehr als abwesend markiert.`)
-        .setColor(0x2ecc71)
-        .setTimestamp();
-
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🟢 Abwesenheit entfernt")
+            .setDescription(`**${displayName}** ist nicht mehr als abwesend markiert.`)
+            .setColor(0x2ecc71)
+            .setTimestamp(),
+        ],
         ephemeral: true,
       });
     }
@@ -629,35 +617,37 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const entries = Object.values(state.absences);
 
-      const embed = new EmbedBuilder()
-        .setTitle("📋 Aktuelle Abwesenheiten")
-        .setDescription(
-          entries.length
-            ? entries.map((a) => `• ${a.displayName}`).join("\n")
-            : "Niemand ist aktuell abwesend gemeldet."
-        )
-        .setColor(0x3498db)
-        .setTimestamp();
-
       return await interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📋 Aktuelle Abwesenheiten")
+            .setDescription(
+              entries.length
+                ? entries.map((a) => `• ${a.displayName}`).join("\n")
+                : "Niemand ist aktuell abwesend gemeldet."
+            )
+            .setColor(0x3498db)
+            .setTimestamp(),
+        ],
         ephemeral: true,
       });
     }
   } catch (error) {
     console.error("❌ Fehler bei Button-Interaktion:", error);
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
-        content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
-        ephemeral: true,
-      }).catch(() => {});
-    } else {
-      await interaction.reply({
-        content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
-        ephemeral: true,
-      }).catch(() => {});
-    }
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
+          ephemeral: true,
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
+          ephemeral: true,
+        });
+      }
+    } catch (_) {}
   }
 });
 
