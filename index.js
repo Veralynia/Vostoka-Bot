@@ -8,194 +8,306 @@ const {
   ButtonStyle,
   EmbedBuilder,
   PermissionsBitField,
-  Events
-} = require('discord.js');
+  Events,
+} = require("discord.js");
+
+const TOKEN = process.env.TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
+
+// Rollen, die das Panel und Meetings nutzen dürfen
+const ALLOWED_ROLES = ["Leaderschaft", "Glaz"];
+
+// Meetings werden im Speicher gehalten
+// Hinweis: Nach einem Railway-Neustart sind sie weg.
+// Wenn du willst, mache ich dir danach eine Version mit Speichern in Datei/DB.
+const meetings = new Map();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
   ],
-  partials: [Partials.GuildMember]
+  partials: [Partials.GuildMember],
 });
 
-const TOKEN = "MTQ4Mzc0NzEyODcwMTYyMDMyNQ.G3SoGQ.Jm9BzrTpogyf3ot49IzZNONYLcV-K31R2leszs";
-const CLIENT_ID = "1483747128701620325";
-const GUILD_ID = "1416200773641044202";
+function hasAllowedRole(member) {
+  if (!member || !member.roles || !member.roles.cache) return false;
+  return member.roles.cache.some((role) => ALLOWED_ROLES.includes(role.name));
+}
 
-// 👉 Rollen die nutzen dürfen
-const ALLOWED_ROLES = ["Leaderschaft", "Glaz"];
+function getDisplayName(member) {
+  return member?.displayName || member?.user?.globalName || member?.user?.username || "Unbekannt";
+}
 
-// 👉 Speicher für Meetings
-let meetings = {};
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("panel")
+      .setDescription("Öffnet das Meeting-Panel")
+      .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  ].map((cmd) => cmd.toJSON());
 
+  const guild = await client.guilds.fetch(GUILD_ID);
+  await guild.commands.set(commands);
+  console.log("✅ Slash-Command /panel wurde registriert.");
+}
 
-// ==========================
-// COMMAND REGISTRIEREN
-// ==========================
-client.once('ready', async () => {
-  console.log(`✅ Eingeloggt als ${client.user.tag}`);
+client.once(Events.ClientReady, async () => {
+  try {
+    console.log(`✅ Bot online als ${client.user.tag}`);
 
-  const command = new SlashCommandBuilder()
-    .setName('panel')
-    .setDescription('Meeting Panel öffnen')
-    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator);
-
-  await client.application.commands.set([command], GUILD_ID);
-});
-
-
-// ==========================
-// PANEL COMMAND
-// ==========================
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'panel') {
-
-    const hasRole = interaction.member.roles.cache.some(role =>
-      ALLOWED_ROLES.includes(role.name)
-    );
-
-    if (!hasRole) {
-      return interaction.reply({
-        content: "❌ Keine Berechtigung",
-        ephemeral: true
-      });
+    if (!TOKEN) {
+      console.error("❌ TOKEN fehlt. Bitte in Railway als Variable setzen.");
+      process.exit(1);
     }
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('create_meeting')
-        .setLabel('📅 Meeting erstellen')
-        .setStyle(ButtonStyle.Primary),
+    if (!GUILD_ID) {
+      console.error("❌ GUILD_ID fehlt. Bitte in Railway als Variable setzen.");
+      process.exit(1);
+    }
 
-      new ButtonBuilder()
-        .setCustomId('show_votes')
-        .setLabel('📊 Abstimmungen anzeigen')
-        .setStyle(ButtonStyle.Secondary)
-    );
-
-    await interaction.reply({
-      content: "📌 **Meeting Panel**",
-      components: [row]
-    });
+    await registerCommands();
+  } catch (error) {
+    console.error("❌ Fehler beim Starten/Registrieren der Commands:", error);
   }
 });
 
+// Slash Commands
+client.on(Events.InteractionCreate, async (interaction) => {
+  try {
+    if (!interaction.isChatInputCommand()) return;
 
-// ==========================
-// BUTTON HANDLING
-// ==========================
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isButton()) return;
+    if (interaction.commandName === "panel") {
+      const member = interaction.member;
 
-  // ======================
-  // MEETING ERSTELLEN
-  // ======================
-  if (interaction.customId === 'create_meeting') {
+      if (!hasAllowedRole(member)) {
+        return await interaction.reply({
+          content: "❌ Du hast keine Berechtigung, dieses Panel zu nutzen.",
+          ephemeral: true,
+        });
+      }
 
-    const meetingId = Date.now();
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("create_meeting")
+          .setLabel("📅 Meeting erstellen")
+          .setStyle(ButtonStyle.Primary),
 
-    meetings[meetingId] = {
-      yes: [],
-      no: []
-    };
+        new ButtonBuilder()
+          .setCustomId("show_votes")
+          .setLabel("📊 Abstimmungen anzeigen")
+          .setStyle(ButtonStyle.Secondary)
+      );
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`yes_${meetingId}`)
-        .setLabel('✅ Zusagen')
-        .setStyle(ButtonStyle.Success),
+      const embed = new EmbedBuilder()
+        .setTitle("📌 Meeting-Panel")
+        .setDescription("Wähle eine Aktion aus.")
+        .setColor(0x8e44ad);
 
-      new ButtonBuilder()
-        .setCustomId(`no_${meetingId}`)
-        .setLabel('❌ Absagen')
-        .setStyle(ButtonStyle.Danger)
-    );
+      await interaction.reply({
+        embeds: [embed],
+        components: [row],
+      });
+    }
+  } catch (error) {
+    console.error("❌ Fehler bei Slash-Command:", error);
 
-    const embed = new EmbedBuilder()
-      .setTitle("📅 Neues Meeting")
-      .setDescription("Stimme jetzt ab!");
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [row]
-    });
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "❌ Beim Ausführen des Befehls ist ein Fehler aufgetreten.",
+        ephemeral: true,
+      }).catch(() => {});
+    } else {
+      await interaction.reply({
+        content: "❌ Beim Ausführen des Befehls ist ein Fehler aufgetreten.",
+        ephemeral: true,
+      }).catch(() => {});
+    }
   }
+});
 
-
-  // ======================
-  // ABSTIMMUNG
-  // ======================
-  if (interaction.customId.startsWith('yes_') || interaction.customId.startsWith('no_')) {
-
-    const [type, id] = interaction.customId.split('_');
-    const meeting = meetings[id];
-
-    if (!meeting) return;
+// Buttons
+client.on(Events.InteractionCreate, async (interaction) => {
+  try {
+    if (!interaction.isButton()) return;
 
     const member = await interaction.guild.members.fetch(interaction.user.id);
 
-    const name = member.displayName; // 👉 HIER IST DER FIX
+    // Meeting erstellen
+    if (interaction.customId === "create_meeting") {
+      if (!hasAllowedRole(member)) {
+        return await interaction.reply({
+          content: "❌ Du hast keine Berechtigung, ein Meeting zu erstellen.",
+          ephemeral: true,
+        });
+      }
 
-    // Entfernen aus beiden Listen
-    meeting.yes = meeting.yes.filter(n => n !== name);
-    meeting.no = meeting.no.filter(n => n !== name);
+      const meetingId = Date.now().toString();
 
-    if (type === 'yes') meeting.yes.push(name);
-    if (type === 'no') meeting.no.push(name);
+      meetings.set(meetingId, {
+        id: meetingId,
+        createdAt: new Date(),
+        yes: new Set(),
+        no: new Set(),
+      });
 
-    await interaction.reply({
-      content: `✅ Stimme gespeichert (${name})`,
-      ephemeral: true
-    });
-  }
+      const voteRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`yes_${meetingId}`)
+          .setLabel("✅ Zusagen")
+          .setStyle(ButtonStyle.Success),
 
-
-  // ======================
-  // ANZEIGEN
-  // ======================
-  if (interaction.customId === 'show_votes') {
-
-    const lastMeeting = Object.values(meetings).pop();
-    if (!lastMeeting) {
-      return interaction.reply("❌ Kein Meeting vorhanden");
-    }
-
-    const guild = interaction.guild;
-    const members = await guild.members.fetch();
-
-    const voted = [...lastMeeting.yes, ...lastMeeting.no];
-
-    const notVoted = members
-      .filter(m => !m.user.bot)
-      .map(m => m.displayName)
-      .filter(name => !voted.includes(name));
-
-    const embed = new EmbedBuilder()
-      .setTitle("📊 Abstimmung")
-      .addFields(
-        {
-          name: "✅ Zugesagt",
-          value: lastMeeting.yes.join("\n") || "Niemand"
-        },
-        {
-          name: "❌ Abgesagt",
-          value: lastMeeting.no.join("\n") || "Niemand"
-        },
-        {
-          name: "⚠️ Nicht abgestimmt",
-          value: notVoted.join("\n") || "Alle haben abgestimmt"
-        }
+        new ButtonBuilder()
+          .setCustomId(`no_${meetingId}`)
+          .setLabel("❌ Absagen")
+          .setStyle(ButtonStyle.Danger)
       );
 
-    await interaction.reply({
-      embeds: [embed]
-    });
+      const embed = new EmbedBuilder()
+        .setTitle("📅 Neues Meeting")
+        .setDescription("Bitte stimme über die Buttons ab.")
+        .addFields(
+          { name: "✅ Zugesagt", value: "Niemand", inline: true },
+          { name: "❌ Abgesagt", value: "Niemand", inline: true }
+        )
+        .setFooter({ text: `Meeting-ID: ${meetingId}` })
+        .setColor(0x5865f2)
+        .setTimestamp();
+
+      return await interaction.reply({
+        embeds: [embed],
+        components: [voteRow],
+      });
+    }
+
+    // Abstimmen
+    if (interaction.customId.startsWith("yes_") || interaction.customId.startsWith("no_")) {
+      const [voteType, meetingId] = interaction.customId.split("_");
+      const meeting = meetings.get(meetingId);
+
+      if (!meeting) {
+        return await interaction.reply({
+          content: "❌ Dieses Meeting wurde nicht gefunden oder wurde nach einem Neustart gelöscht.",
+          ephemeral: true,
+        });
+      }
+
+      const displayName = getDisplayName(member);
+
+      // Erst aus beiden Sets entfernen, dann neu setzen
+      meeting.yes.delete(displayName);
+      meeting.no.delete(displayName);
+
+      if (voteType === "yes") {
+        meeting.yes.add(displayName);
+      } else {
+        meeting.no.add(displayName);
+      }
+
+      const yesList = [...meeting.yes];
+      const noList = [...meeting.no];
+
+      const updatedEmbed = new EmbedBuilder()
+        .setTitle("📅 Neues Meeting")
+        .setDescription("Bitte stimme über die Buttons ab.")
+        .addFields(
+          {
+            name: "✅ Zugesagt",
+            value: yesList.length ? yesList.join("\n") : "Niemand",
+            inline: true,
+          },
+          {
+            name: "❌ Abgesagt",
+            value: noList.length ? noList.join("\n") : "Niemand",
+            inline: true,
+          }
+        )
+        .setFooter({ text: `Meeting-ID: ${meetingId}` })
+        .setColor(0x5865f2)
+        .setTimestamp(meeting.createdAt);
+
+      await interaction.update({
+        embeds: [updatedEmbed],
+        components: interaction.message.components,
+      });
+
+      return await interaction.followUp({
+        content: `✅ Deine Stimme wurde gespeichert: **${displayName}**`,
+        ephemeral: true,
+      });
+    }
+
+    // Abstimmungen anzeigen
+    if (interaction.customId === "show_votes") {
+      if (!hasAllowedRole(member)) {
+        return await interaction.reply({
+          content: "❌ Du hast keine Berechtigung, Abstimmungen anzusehen.",
+          ephemeral: true,
+        });
+      }
+
+      const allMeetings = [...meetings.values()];
+      const lastMeeting = allMeetings[allMeetings.length - 1];
+
+      if (!lastMeeting) {
+        return await interaction.reply({
+          content: "❌ Es gibt aktuell kein Meeting.",
+          ephemeral: true,
+        });
+      }
+
+      const guildMembers = await interaction.guild.members.fetch();
+
+      const votedNames = new Set([
+        ...lastMeeting.yes,
+        ...lastMeeting.no,
+      ]);
+
+      const notVoted = guildMembers
+        .filter((m) => !m.user.bot)
+        .map((m) => getDisplayName(m))
+        .filter((name) => !votedNames.has(name));
+
+      const embed = new EmbedBuilder()
+        .setTitle("📊 Abstimmungsübersicht")
+        .addFields(
+          {
+            name: "✅ Zugesagt",
+            value: lastMeeting.yes.size ? [...lastMeeting.yes].join("\n") : "Niemand",
+          },
+          {
+            name: "❌ Abgesagt",
+            value: lastMeeting.no.size ? [...lastMeeting.no].join("\n") : "Niemand",
+          },
+          {
+            name: "⚠️ Nicht abgestimmt",
+            value: notVoted.length ? notVoted.join("\n") : "Alle haben abgestimmt",
+          }
+        )
+        .setFooter({ text: `Meeting-ID: ${lastMeeting.id}` })
+        .setColor(0xf1c40f)
+        .setTimestamp(lastMeeting.createdAt);
+
+      return await interaction.reply({
+        embeds: [embed],
+        ephemeral: true,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Fehler bei Button-Interaktion:", error);
+
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
+        ephemeral: true,
+      }).catch(() => {});
+    } else {
+      await interaction.reply({
+        content: "❌ Bei der Button-Aktion ist ein Fehler aufgetreten.",
+        ephemeral: true,
+      }).catch(() => {});
+    }
   }
 });
 
-
-// ==========================
 client.login(TOKEN);
